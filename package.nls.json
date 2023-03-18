@@ -6,6 +6,7 @@
     "command.openhgrc": "Open hgrc file",
     "command.refresh": "Refresh",
     "command.openChange": "Open Changes",
+    "command.openParentChange": "Open Parent Changes",
     "command.openFile": "Open File",
     "command.openFiles": "Open Files",
     "command.stage": "Stage Changes",

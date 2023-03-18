@@ -255,13 +255,104 @@ export class Resource implements SourceControlResourceState {
         return { strikeThrough: this.strikeThrough, light, dark };
     }
 
+
+    get leftEditorUri(): Uri | undefined {
+        switch (this.status) {
+            case Status.MODIFIED:
+                return toHgUri(this.original, this._leftEditorRef);
+
+            case Status.RENAMED:
+                if (this.renameResourceUri) {
+                    return toHgUri(this.original, this._leftEditorRef);
+                }
+                return undefined;
+
+            case Status.ADDED:
+            case Status.IGNORED:
+            case Status.DELETED:
+            case Status.MISSING:
+            case Status.UNTRACKED:
+            case Status.CLEAN:
+                return undefined;
+        }
+    }
+
+    get rightEditorUri(): Uri | undefined {
+        if (
+            this.mergeStatus === MergeStatus.UNRESOLVED &&
+            this.status !== Status.MISSING &&
+            this.status !== Status.DELETED
+        ) {
+            return toHgUri(this.resourceUri, "p2()");
+        }
+
+        switch (this.status) {
+            case Status.DELETED:
+                return toHgUri(this.resourceUri, this._leftEditorRef);
+
+            case Status.ADDED:
+            case Status.IGNORED:
+            case Status.MODIFIED:
+            case Status.RENAMED:
+            case Status.UNTRACKED:
+            case Status.CLEAN:
+                return this._rightEditorRef
+                    ? toHgUri(this.resourceUri, this._rightEditorRef)
+                    : this.resourceUri;
+
+            case Status.MISSING:
+                return undefined;
+        }
+    }
+
+    get editorTitle(): string {
+        const basename = path.basename(this.resourceUri.fsPath);
+        if (
+            this.mergeStatus === MergeStatus.UNRESOLVED &&
+            this.status !== Status.MISSING &&
+            this.status !== Status.DELETED
+        ) {
+            return `${basename} (local <-> other)${this._editorTitleSuffix}`;
+        }
+
+        switch (this.status) {
+            case Status.MODIFIED:
+            case Status.ADDED:
+                return `${basename} (Modified)${this._editorTitleSuffix}`;
+
+            case Status.RENAMED:
+                return `${basename} (Renamed)${this._editorTitleSuffix}`;
+
+            case Status.DELETED:
+                return `${basename} (Deleted)${this._editorTitleSuffix}`;
+        }
+
+        return this._editorTitleSuffix;
+    }
+
+
+    cloneWithRightAs(rightEditorRef: string, editorTitleSuffix: string): Resource {
+        return new Resource(
+            this._resourceGroup,
+            this.resourceUri,
+            this._status,
+            this._mergeStatus,
+            this._renameResourceUri,
+            this._leftEditorRef,
+            rightEditorRef,
+            editorTitleSuffix);
+    }
+
     constructor(
         private _resourceGroup: ResourceGroup,
         private _resourceUri: Uri,
         private _status: Status,
         private _mergeStatus: MergeStatus,
-        private _renameResourceUri?: Uri
-    ) {}
+        private _renameResourceUri?: Uri,
+        private _leftEditorRef: string = ".",  // working dir parent
+        private _rightEditorRef: string = "",  // working dir
+        private _editorTitleSuffix: string = "",
+    ) { }
 }
 
 export const enum Operation {
@@ -1218,7 +1309,7 @@ export class Repository implements IDisposable, QuickDiffProvider {
                 if (
                     e instanceof HgError &&
                     e.hgErrorCode ===
-                        HgErrorCodes.DefaultRepositoryNotConfigured
+                    HgErrorCodes.DefaultRepositoryNotConfigured
                 ) {
                     const action = await interaction.warnDefaultRepositoryNotConfigured();
                     if (action === DefaultRepoNotConfiguredAction.OpenHGRC) {
@@ -1241,7 +1332,7 @@ export class Repository implements IDisposable, QuickDiffProvider {
                 if (
                     e instanceof HgError &&
                     e.hgErrorCode ===
-                        HgErrorCodes.DefaultRepositoryNotConfigured
+                    HgErrorCodes.DefaultRepositoryNotConfigured
                 ) {
                     const action = await interaction.warnDefaultRepositoryNotConfigured();
                     if (action === DefaultRepoNotConfiguredAction.OpenHGRC) {
@@ -1684,11 +1775,12 @@ export class Repository implements IDisposable, QuickDiffProvider {
         const currentRefPromise:
             | Promise<Bookmark | undefined>
             | Promise<Ref | undefined> = useBookmarks
-            ? this.repository.getActiveBookmark()
-            : this.repository.getCurrentBranch();
+                ? this.repository.getActiveBookmark()
+                : this.repository.getCurrentBranch();
 
-        const [fileStatuses, currentRef, resolveStatuses] = await Promise.all([
+        const [fileStatuses, parentStatuses, currentRef, resolveStatuses] = await Promise.all([
             this.repository.getStatus(),
+            this.repository.getStatus("."),
             currentRefPromise,
             this._repoStatus.isMerge
                 ? this.repository.getResolveList()
@@ -1702,6 +1794,7 @@ export class Repository implements IDisposable, QuickDiffProvider {
         const groupInput: IGroupStatusesParams = {
             respositoryRoot: this.repository.root,
             fileStatuses: fileStatuses || [],
+            parentStatuses: parentStatuses || [],
             repoStatus: this._repoStatus,
             resolveStatuses: resolveStatuses,
             statusGroups: this._groups,

@@ -4,6 +4,7 @@ import * as path from "path";
 import * as nls from "vscode-nls";
 import * as fs from "fs";
 import { Resource, Status, MergeStatus } from "./repository";
+import { toHgUri } from "./uri";
 
 const localize = nls.loadMessageBundle();
 
@@ -11,6 +12,7 @@ export interface IGroupStatusesParams {
     respositoryRoot: string;
     statusGroups: IStatusGroups;
     fileStatuses: IFileStatus[];
+    parentStatuses: IFileStatus[];
     repoStatus: IRepoStatus;
     resolveStatuses: IFileStatus[] | undefined;
 }
@@ -21,6 +23,7 @@ export interface IStatusGroups {
     merge: MergeGroup;
     working: WorkingDirectoryGroup;
     untracked: UntrackedGroup;
+    parent: ParentGroup;
 }
 
 export type ResourceGroupId = keyof IStatusGroups;
@@ -48,6 +51,10 @@ export function createEmptyStatusGroups(
         UntrackedGroup.ID,
         localize("untracked files", "Untracked Files")
     );
+    const parentGroup = scm.createResourceGroup(
+        ParentGroup.ID,
+        localize("parent changes", "Parent Changes")
+    );
 
     return [
         {
@@ -56,8 +63,9 @@ export function createEmptyStatusGroups(
             merge: new MergeGroup(mergeGroup, []),
             working: new WorkingDirectoryGroup(workingGroup, []),
             untracked: new UntrackedGroup(untrackedGroup, []),
+            parent: new ParentGroup(parentGroup, []),
         },
-        [conflictGroup, stagingGroup, mergeGroup, workingGroup, untrackedGroup],
+        [conflictGroup, stagingGroup, mergeGroup, workingGroup, untrackedGroup, parentGroup],
     ];
 }
 
@@ -163,18 +171,47 @@ export class WorkingDirectoryGroup extends ResourceGroup {
     static readonly ID = "working";
 }
 
+export class ParentGroup extends ResourceGroup {
+    static readonly ID = "parent";
+}
+
 export function groupStatuses({
     respositoryRoot,
-    statusGroups: { conflict, staging, merge, working, untracked },
+    statusGroups: { conflict, staging, merge, working, untracked, parent },
     fileStatuses,
+    parentStatuses,
     repoStatus,
     resolveStatuses,
 }: IGroupStatusesParams): IStatusGroups {
+    const parentResources: Resource[] = [];
     const workingDirectoryResources: Resource[] = [];
     const stagingResources: Resource[] = [];
     const conflictResources: Resource[] = [];
     const mergeResources: Resource[] = [];
     const untrackedResources: Resource[] = [];
+
+    const translateStatus = (rawStatus: string, renamed: boolean): Status => {
+        switch (rawStatus) {
+            case "M":
+                return Status.MODIFIED;
+            case "R":
+                return Status.DELETED;
+            case "I":
+                return Status.IGNORED;
+            case "?":
+                return Status.UNTRACKED;
+            case "!":
+                return Status.MISSING;
+            case "A":
+                return renamed ? Status.RENAMED : Status.ADDED;
+            case "C":
+                return Status.CLEAN;
+            default:
+                throw new HgError({
+                    message: "Unknown rawStatus: " + rawStatus,
+                });
+        }
+    }
 
     const chooseResourcesAndGroup = (
         uriString: string,
@@ -182,34 +219,7 @@ export function groupStatuses({
         mergeStatus: MergeStatus,
         renamed: boolean
     ): [Resource[], ResourceGroup, Status] => {
-        let status: Status;
-        switch (rawStatus) {
-            case "M":
-                status = Status.MODIFIED;
-                break;
-            case "R":
-                status = Status.DELETED;
-                break;
-            case "I":
-                status = Status.IGNORED;
-                break;
-            case "?":
-                status = Status.UNTRACKED;
-                break;
-            case "!":
-                status = Status.MISSING;
-                break;
-            case "A":
-                status = renamed ? Status.RENAMED : Status.ADDED;
-                break;
-            case "C":
-                status = Status.CLEAN;
-                break;
-            default:
-                throw new HgError({
-                    message: "Unknown rawStatus: " + rawStatus,
-                });
-        }
+        const status = translateStatus(rawStatus, renamed);
 
         if (status === Status.IGNORED || status === Status.UNTRACKED) {
             return [untrackedResources, untracked, status];
@@ -232,8 +242,22 @@ export function groupStatuses({
         return [targetResources, targetGroup, status];
     };
 
-    const seenUriStrings: Map<string, boolean> = new Map();
+    const seenParentUriStrings: Map<string, boolean> = new Map();
+    for (const raw of parentStatuses) {
+        const uri = Uri.file(path.join(respositoryRoot, raw.path));
+        const uriString = uri.toString();
+        seenParentUriStrings.set(uriString, true);
+        const renameUri = raw.rename
+            ? Uri.file(path.join(respositoryRoot, raw.rename))
+            : undefined;
+        const status = translateStatus(raw.status, !!raw.rename);
+        parentResources.push(
+            new Resource(parent, uri, status, MergeStatus.NONE, renameUri,
+                ".^", "", " (vs Parent)")
+        );
+    }
 
+    const seenUriStrings: Map<string, boolean> = new Map();
     for (const raw of fileStatuses) {
         const uri = Uri.file(path.join(respositoryRoot, raw.path));
         const uriString = uri.toString();
@@ -293,6 +317,7 @@ export function groupStatuses({
             untracked.resourceGroup,
             untrackedResources
         ),
+        parent: new ParentGroup(parent.resourceGroup, parentResources),
     };
 }
 

@@ -146,9 +146,9 @@ export class CommandCenter {
         preserveFocus?: boolean,
         preserveSelection?: boolean
     ): Promise<void> {
-        const left = this.getLeftResource(resource);
-        const right = this.getRightResource(resource);
-        const title = this.getTitle(resource);
+        const left = resource.leftEditorUri;
+        const right = resource.rightEditorUri;
+        const title = resource.editorTitle;
 
         if (!right) {
             // TODO
@@ -185,78 +185,6 @@ export class CommandCenter {
                 opts
             );
         }
-    }
-
-    private getLeftResource(resource: Resource): Uri | undefined {
-        switch (resource.status) {
-            case Status.MODIFIED:
-                return toHgUri(resource.original, ".");
-
-            case Status.RENAMED:
-                if (resource.renameResourceUri) {
-                    return toHgUri(resource.original, ".");
-                }
-                return undefined;
-
-            case Status.ADDED:
-            case Status.IGNORED:
-            case Status.DELETED:
-            case Status.MISSING:
-            case Status.UNTRACKED:
-            case Status.CLEAN:
-                return undefined;
-        }
-    }
-
-    private getRightResource(resource: Resource): Uri | undefined {
-        if (
-            resource.mergeStatus === MergeStatus.UNRESOLVED &&
-            resource.status !== Status.MISSING &&
-            resource.status !== Status.DELETED
-        ) {
-            return toHgUri(resource.resourceUri, "p2()");
-        }
-
-        switch (resource.status) {
-            case Status.DELETED:
-                return toHgUri(resource.resourceUri, ".");
-
-            case Status.ADDED:
-            case Status.IGNORED:
-            case Status.MODIFIED:
-            case Status.RENAMED:
-            case Status.UNTRACKED:
-            case Status.CLEAN:
-                return resource.resourceUri;
-
-            case Status.MISSING:
-                return undefined;
-        }
-    }
-
-    private getTitle(resource: Resource): string {
-        const basename = path.basename(resource.resourceUri.fsPath);
-        if (
-            resource.mergeStatus === MergeStatus.UNRESOLVED &&
-            resource.status !== Status.MISSING &&
-            resource.status !== Status.DELETED
-        ) {
-            return `${basename} (local <-> other)`;
-        }
-
-        switch (resource.status) {
-            case Status.MODIFIED:
-            case Status.ADDED:
-                return `${basename} (Working Directory)`;
-
-            case Status.RENAMED:
-                return `${basename} (Renamed)`;
-
-            case Status.DELETED:
-                return `${basename} (Deleted)`;
-        }
-
-        return "";
     }
 
     @command("hg.clone")
@@ -445,6 +373,28 @@ export class CommandCenter {
         const preview = resources.length === 1 ? undefined : false;
         for (const resource of resources) {
             await this._openResource(resource, preview, true, false);
+        }
+    }
+
+    @command("hg.openParentChange")
+    async openParentChange(...resources: Resource[]): Promise<void> {
+        if (!resources) {
+            return;
+        }
+
+        if (resources.length === 1) {
+            // a resource group proxy object?
+            const [resourceGroup] = resources;
+            if (isResourceGroup(resourceGroup)) {
+                const resources = resourceGroup.resourceStates as Resource[];
+                return this.openParentChange(...resources);
+            }
+        }
+
+        const preview = resources.length === 1 ? undefined : false;
+        for (const resource of resources) {
+            const parentRes = resource.cloneWithRightAs(".", " (Parent)");
+            await this._openResource(parentRes, preview, true, false);
         }
     }
 
