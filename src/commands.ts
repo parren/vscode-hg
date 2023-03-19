@@ -392,6 +392,7 @@ export class CommandCenter {
         }
 
         const preview = resources.length === 1 ? undefined : false;
+        const parentSuffix = localize("parent change", " (Parent)");
         for (const resource of resources) {
             const parentRes = resource.cloneWithRightAs(".", " (Parent)");
             await this._openResource(parentRes, preview, true, false);

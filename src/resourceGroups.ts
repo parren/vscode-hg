@@ -243,6 +243,7 @@ export function groupStatuses({
     };
 
     const seenParentUriStrings: Map<string, boolean> = new Map();
+    const parentSuffix = localize("including parent change", " (+Parent)")
     for (const raw of parentStatuses) {
         const uri = Uri.file(path.join(respositoryRoot, raw.path));
         const uriString = uri.toString();
@@ -253,7 +254,7 @@ export function groupStatuses({
         const status = translateStatus(raw.status, !!raw.rename);
         parentResources.push(
             new Resource(parent, uri, status, MergeStatus.NONE, renameUri,
-                ".^", "", " (vs Parent)")
+                ".^", "", " (+Parent)")
         );
     }
 
