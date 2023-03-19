@@ -4,59 +4,32 @@
  *  Licensed under the MIT License. See LICENSE.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import "mocha";
 import * as assert from "assert";
-import { commands, Uri, extensions } from "vscode";
-import * as cp from "child_process";
 import * as fs from "fs";
+import "mocha";
 import * as path from "path";
-import * as tmp from "tmp";
-import { Model } from "../../model";
-import { eventToPromise } from "../../util";
-import { Repository } from "../../repository";
+import { commands } from "vscode";
+import { setupTestRepo, teardownTestRepo, TestRepo } from "./testRepo";
 
 // Defines a Mocha test suite to group tests of similar kind together
 suite("hg", () => {
-    // Set up test directory
-    tmp.setGracefulCleanup();
-    const testWorkspace = tmp.dirSync().name;
+    let testRepo: TestRepo;
 
-    console.info(`Using workspace: ${testWorkspace}`);
-
-    const testWorkspaceUri = Uri.file(testWorkspace);
-    const cwd = fs.realpathSync(testWorkspaceUri.fsPath);
-
-    let hg: Model;
-    let repository: Repository;
-
-    function file(relativePath: string) {
-        return path.join(cwd, relativePath);
-    }
-
-    suiteSetup(async function () {
-        console.log("Suite setup");
-        cp.execSync("hg init", { cwd });
-
-        // make sure hg is activated
-        const ext = extensions.getExtension("mrcrowl.hg");
-        hg = await ext?.activate();
-        hg.tryOpenRepository(cwd);
-
-        if (hg.repositories.length === 0) {
-            await eventToPromise(hg.onDidOpenRepository);
-        }
-
-        assert.equal(hg.repositories.length, 1);
-
-        repository = hg.repositories[0];
+    setup(async function () {
+        testRepo = await setupTestRepo();
     });
 
-    // Defines a Mocha unit test
-    test("status works", async function () {
-        this.enableTimeouts(false);
-        fs.writeFileSync(file("text.txt"), "test", "utf8");
+    teardown(async function () {
+        await teardownTestRepo(testRepo);
+    });
 
-        assert.equal(fs.realpathSync(repository.root), cwd);
+    function file(relativePath: string) {
+        return path.join(testRepo.dir, relativePath);
+    }
+
+    test("status works", async function () {
+        const repository = testRepo.repo;
+        fs.writeFileSync(file("text.txt"), "test", "utf8");
 
         await commands.executeCommand("workbench.view.scm");
         await repository.status();
