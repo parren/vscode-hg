@@ -68,6 +68,7 @@ import {
     IStatusGroups,
     groupStatuses,
     IGroupStatusesParams,
+    ParentGroup,
 } from "./resourceGroups";
 import { Path } from "./hg";
 import {
@@ -529,6 +530,9 @@ export class Repository implements IDisposable, QuickDiffProvider {
     }
     get untrackedGroup(): UntrackedGroup {
         return this._groups.untracked;
+    }
+    get parentGroup(): ParentGroup {
+        return this._groups.parent;
     }
 
     get head(): Ref | undefined {

@@ -5,40 +5,30 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as assert from "assert";
-import * as fs from "fs";
 import "mocha";
-import * as path from "path";
 import { commands } from "vscode";
-import { setupTestRepo, teardownTestRepo, TestRepo } from "./testRepo";
+import { TestRepo } from "./testRepo";
 
 // Defines a Mocha test suite to group tests of similar kind together
 suite("hg", () => {
-    let testRepo: TestRepo;
+    let env: TestRepo;
 
     setup(async function () {
-        testRepo = await setupTestRepo();
+        env = await TestRepo.setup({});
     });
-
-    teardown(async function () {
-        await teardownTestRepo(testRepo);
-    });
-
-    function file(relativePath: string) {
-        return path.join(testRepo.dir, relativePath);
-    }
 
     test("status works", async function () {
-        const repository = testRepo.repo;
-        fs.writeFileSync(file("text.txt"), "test", "utf8");
+        const repo = env.repo;
+        env.writeFile("text.txt", "test");
 
         await commands.executeCommand("workbench.view.scm");
-        await repository.status();
-        assert.equal(0, repository.stagingGroup.resources.length);
-        assert.equal(1, repository.untrackedGroup.resources.length);
+        await repo.status();
+        assert.strictEqual(repo.stagingGroup.resources.length, 0);
+        assert.strictEqual(repo.untrackedGroup.resources.length, 1);
 
         await commands.executeCommand("hg.addAll");
-        await repository.status();
-        assert.equal(1, repository.workingDirectoryGroup.resources.length);
-        assert.equal(0, repository.untrackedGroup.resources.length);
+        await repo.status();
+        assert.strictEqual(repo.workingDirectoryGroup.resources.length, 1);
+        assert.strictEqual(repo.untrackedGroup.resources.length, 0);
     });
 });
