@@ -19,7 +19,7 @@ suite("hg", () => {
 
     test("status works", async function () {
         const repo = env.repo;
-        env.writeFile("text.txt", "test");
+        env.write("text.txt");
 
         await commands.executeCommand("workbench.view.scm");
         await repo.status();

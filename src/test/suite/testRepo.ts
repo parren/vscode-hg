@@ -49,17 +49,26 @@ export class TestRepo {
         public readonly dir: string
     ) {}
 
-    writeFile(relativeName: string, content: string) {
-        fs.writeFileSync(path.join(this.dir, relativeName), content, "utf8");
+    write(name: string, opts?: { content?: string }) {
+        let content = opts?.content || `content of ${name}`;
+        fs.writeFileSync(this.path(name), content, "utf8");
     }
 
-    removeFile(relativeName: string, content: string) {
-        fs.unlinkSync(path.join(this.dir, relativeName));
+    remove(name: string) {
+        fs.unlinkSync(this.path(name));
+    }
+
+    rename(oldName: string, newName: string) {
+        fs.renameSync(this.path(oldName), this.path(newName));
     }
 
     hg(hgCmd: string): string {
         return cp
             .execSync(`hg ${hgCmd}`, { cwd: this.dir, encoding: "utf8" })
             .toString();
+    }
+
+    private path(name: string): string {
+        return path.join(this.dir, name);
     }
 }

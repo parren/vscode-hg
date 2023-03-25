@@ -260,7 +260,7 @@ export class Resource implements SourceControlResourceState {
     get leftEditorUri(): Uri | undefined {
         switch (this.status) {
             case Status.MODIFIED:
-                return toHgUri(this.original, this._leftEditorRef);
+                return toHgUri(this.resourceUri, this._leftEditorRef);
 
             case Status.RENAMED:
                 if (this.renameResourceUri) {
@@ -335,7 +335,7 @@ export class Resource implements SourceControlResourceState {
     cloneWithRightAs(rightEditorRef: string, editorTitleSuffix: string): Resource {
         return new Resource(
             this._resourceGroup,
-            this.resourceUri,
+            this._resourceUri,
             this._status,
             this._mergeStatus,
             this._renameResourceUri,
