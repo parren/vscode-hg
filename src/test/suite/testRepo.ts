@@ -1,13 +1,13 @@
-import "mocha";
 import * as assert from "assert";
-import { Uri, extensions } from "vscode";
 import * as cp from "child_process";
 import * as fs from "fs";
+import "mocha";
 import * as path from "path";
 import * as tmp from "tmp";
+import { commands, extensions, Uri } from "vscode";
 import { Model } from "../../model";
+import { Repository, Resource, Status } from "../../repository";
 import { eventToPromise } from "../../util";
-import { Repository } from "../../repository";
 
 export interface TestRepoOpts {
     preserveOpenedRepos?: boolean;
@@ -17,6 +17,8 @@ export class TestRepo {
     static async setup({
         preserveOpenedRepos,
     }: TestRepoOpts): Promise<TestRepo> {
+        await commands.executeCommand("openEditors.closeAll");
+
         const ext = extensions.getExtension("mrcrowl.hg");
         const model = await ext!.activate();
         if (!preserveOpenedRepos) {
@@ -50,7 +52,7 @@ export class TestRepo {
     ) {}
 
     write(name: string, opts?: { content?: string }) {
-        let content = opts?.content || `content of ${name}`;
+        let content = opts?.content || `original ${name}`;
         fs.writeFileSync(this.path(name), content, "utf8");
     }
 
@@ -66,6 +68,28 @@ export class TestRepo {
         return cp
             .execSync(`hg ${hgCmd}`, { cwd: this.dir, encoding: "utf8" })
             .toString();
+    }
+
+    parentResource(name: string) {
+        return this.namedResource(this.repo.parentGroup.resources, name);
+    }
+
+    namedResource(resources: Resource[], name: string) {
+        return resources.find(
+            (r) => path.basename(r.resourceUri.path) == name
+        )!;
+    }
+
+    parentStatusesByName(): { [name: string]: Status } {
+        return this.statusesByName(this.repo.parentGroup.resources);
+    }
+
+    statusesByName(resources: Resource[]): { [name: string]: Status } {
+        let result: { [name: string]: Status } = {};
+        for (let r of resources) {
+            result[path.basename(r.resourceUri.path)] = r.status;
+        }
+        return result;
     }
 
     private path(name: string): string {

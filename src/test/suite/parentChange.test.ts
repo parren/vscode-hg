@@ -1,10 +1,9 @@
 import * as assert from "assert";
-import * as path from "path";
 import "mocha";
 import * as vscode from "vscode";
+import { openOnly, openEditor, OpenEditor } from "./vscodeUtils";
+import { Status } from "../../repository";
 import { TestRepo } from "./testRepo";
-import { Resource, Status } from "../../repository";
-import { fromHgUri } from "../../uri";
 
 // See https://code.visualstudio.com/api/working-with-extensions/testing-extension
 
@@ -15,44 +14,6 @@ suite("parent change", () => {
         await vscode.commands.executeCommand("openEditors.closeAll");
         env = await TestRepo.setup({});
     });
-
-    function parentResource(name: string) {
-        return env.repo.parentGroup.resources.find(
-            (r) => path.basename(r.resourceUri.path) == name
-        )!;
-    }
-
-    function statusesByName(): { [name: string]: Status } {
-        let result: { [name: string]: Status } = {};
-        for (let r of env.repo.parentGroup.resources) {
-            result[path.basename(r.resourceUri.path)] = r.status;
-        }
-        return result;
-    }
-
-    async function open(r: Resource) {
-        await openWith(r.command.command, r);
-    }
-
-    async function openWith(command: string, r: Resource) {
-        await vscode.commands.executeCommand(command, ...r.command.arguments!);
-    }
-
-    function documents(): string[] {
-        let ref = function (uri: vscode.Uri): string {
-            if (!uri.query) return "";
-            const { path, ref } = fromHgUri(uri);
-            return ref ? `@${ref}` : "";
-        };
-        return vscode.workspace.textDocuments
-            .filter((d) => d.uri.scheme != "vscode-scm")
-            .map((d) => {
-                let p = `${d.uri.scheme}:${path.basename(d.uri.path)}`;
-                let r = ref(d.uri);
-                let t = d.getText();
-                return `${p}${r} => ${t}`;
-            });
-    }
 
     suite("in empty repo", function () {
         test("is empty for a clean wdir", async function () {
@@ -80,15 +41,15 @@ suite("parent change", () => {
             env.hg("commit --message A");
 
             env.write("untrackedWdir");
-            env.write("addedWdir");
-            env.hg("add addedWdir");
+            env.write("addWdir");
+            env.hg("add addWdir");
         });
 
-        test("lists added parent files as added", async function () {
+        test("lists add parent files as add", async function () {
             const repo = env.repo;
             await vscode.commands.executeCommand("workbench.view.scm");
             await repo.status();
-            assert.deepStrictEqual(statusesByName(), {
+            assert.deepStrictEqual(env.parentStatusesByName(), {
                 committed1: Status.ADDED,
                 committed2: Status.ADDED,
             });
@@ -97,178 +58,133 @@ suite("parent change", () => {
 
     suite("in repo with two commits", function () {
         setup(async function () {
-            env.write("unmodified");
-            env.write("modified");
-            env.write("modifiedInWdir");
-            env.write("modifiedInBoth");
-            env.write("removed");
-            env.write("removedInWdir");
-            env.write("toBeRenamed");
-            env.write("toBeRenamedInWdir");
-            env.write("toBeRenamedInBoth");
+            env.write("unmod");
+            env.write("mod");
+            env.write("modInWdir");
+            env.write("modInBoth");
+            env.write("del");
+            env.write("delInWdir");
+            env.write("toBeRen");
+            env.write("toBeRenInWdir");
+            env.write("toBeRenInBoth");
             env.hg("add .");
             env.hg("commit --message A");
 
-            env.write("modified", { content: "modified in parent" });
-            env.write("modifiedInBoth", { content: "modified in parent" });
-            env.hg("rm removed");
-            env.hg("mv toBeRenamed renamed");
-            env.write("renamed", { content: "renamed in parent" });
-            env.hg("mv toBeRenamedInBoth renamedInParent");
-            env.write("renamedInParent", { content: "renamed in parent" });
-            env.write("added");
-            env.hg("add added");
+            env.write("mod", { content: "mod in parent" });
+            env.write("modInBoth", { content: "mod in parent" });
+            env.hg("rm del");
+            env.hg("mv toBeRen ren");
+            env.write("ren", { content: "ren in parent" });
+            env.hg("mv toBeRenInBoth renInParent");
+            env.write("renInParent", { content: "ren in parent" });
+            env.write("add");
+            env.hg("add add");
             env.hg("commit --message B");
 
-            env.write("modifiedInWdir", { content: "modified in wdir" });
-            env.write("modifiedInBoth", { content: "modified in wdir" });
-            env.hg("rm removedInWdir");
-            env.hg("mv toBeRenamedInWdir renamedInWdir");
-            env.write("renamedInWdir", { content: "renamed in wdir" });
-            env.hg("mv renamedInParent renamedInBoth");
-            env.write("renamedInBoth", { content: "renamed in wdir" });
+            env.write("modInWdir", { content: "mod in wdir" });
+            env.write("modInBoth", { content: "mod in wdir" });
+            env.hg("rm delInWdir");
+            env.hg("mv toBeRenInWdir renInWdir");
+            env.write("renInWdir", { content: "ren in wdir" });
+            env.hg("mv renInParent renInBoth");
+            env.write("renInBoth", { content: "ren in wdir" });
 
             await vscode.commands.executeCommand("workbench.view.scm");
             await env.repo.status();
         });
 
         test("lists parent files correctly", async function () {
-            assert.deepStrictEqual(statusesByName(), {
-                added: Status.ADDED,
-                modified: Status.MODIFIED,
-                modifiedInBoth: Status.MODIFIED,
-                removed: Status.DELETED,
-                renamed: Status.RENAMED,
-                renamedInParent: Status.RENAMED,
-                toBeRenamed: Status.DELETED,
-                toBeRenamedInBoth: Status.DELETED,
+            assert.deepStrictEqual(env.parentStatusesByName(), {
+                add: Status.ADDED,
+                mod: Status.MODIFIED,
+                modInBoth: Status.MODIFIED,
+                del: Status.DELETED,
+                ren: Status.RENAMED,
+                renInParent: Status.RENAMED,
+                toBeRen: Status.DELETED,
+                toBeRenInBoth: Status.DELETED,
             });
         });
 
-        test("shows added parent diff", async function () {
-            await open(parentResource("added"));
-            assert.strictEqual(
-                vscode.window.activeTextEditor?.document.getText(),
-                "content of added"
-            );
-            assert.deepStrictEqual(documents(), [
-                "file:added => content of added",
-            ]);
+        test("shows add parent diff", async function () {
+            await openOnly(env.parentResource("add"));
+            assert.deepStrictEqual(openEditor(), {
+                only: { uri: "file:add", text: "original add" },
+            } as OpenEditor);
         });
 
-        test("shows modified parent diff", async function () {
-            await openWith("hg.openChange", parentResource("modified"));
-            assert.strictEqual(
-                vscode.window.activeTextEditor?.document.getText(),
-                "modified in parent"
-            );
-            assert.deepStrictEqual(documents(), [
-                "file:modified => modified in parent",
-                "hg:modified@.^ => content of modified",
-            ]);
+        test("shows mod parent diff", async function () {
+            await openOnly(env.parentResource("mod"));
+            assert.deepStrictEqual(openEditor(), {
+                left: { uri: "hg:mod@.^", text: "original mod" },
+                right: { uri: "file:mod", text: "mod in parent" },
+            } as OpenEditor);
 
-            await vscode.commands.executeCommand("openEditors.closeAll");
-
-            await openWith("hg.openParentChange", parentResource("modified"));
-            assert.strictEqual(
-                vscode.window.activeTextEditor?.document.getText(),
-                "modified in parent"
-            );
-            assert.deepStrictEqual(documents(), [
-                "hg:modified@. => modified in parent",
-                "hg:modified@.^ => content of modified",
-            ]);
+            await openOnly(env.parentResource("mod"), "hg.openParentChange");
+            assert.deepStrictEqual(openEditor(), {
+                left: { uri: "hg:mod@.^", text: "original mod" },
+                right: { uri: "hg:mod@.", text: "mod in parent" },
+            } as OpenEditor);
         });
 
-        test("shows modified parent and wdir diff", async function () {
-            await openWith("hg.openChange", parentResource("modifiedInBoth"));
-            assert.strictEqual(
-                vscode.window.activeTextEditor?.document.getText(),
-                "modified in wdir"
-            );
-            assert.deepStrictEqual(documents(), [
-                "file:modifiedInBoth => modified in wdir",
-                "hg:modifiedInBoth@.^ => content of modifiedInBoth",
-            ]);
+        test("shows mod parent and wdir diff", async function () {
+            await openOnly(env.parentResource("modInBoth"));
+            assert.deepStrictEqual(openEditor(), {
+                left: { uri: "hg:modInBoth@.^", text: "original modInBoth" },
+                right: { uri: "file:modInBoth", text: "mod in wdir" },
+            } as OpenEditor);
 
-            await vscode.commands.executeCommand("openEditors.closeAll");
-
-            await openWith(
-                "hg.openParentChange",
-                parentResource("modifiedInBoth")
+            await openOnly(
+                env.parentResource("modInBoth"),
+                "hg.openParentChange"
             );
-            assert.strictEqual(
-                vscode.window.activeTextEditor?.document.getText(),
-                "modified in parent"
-            );
-            assert.deepStrictEqual(documents(), [
-                "hg:modifiedInBoth@. => modified in parent",
-                "hg:modifiedInBoth@.^ => content of modifiedInBoth",
-            ]);
+            assert.deepStrictEqual(openEditor(), {
+                left: { uri: "hg:modInBoth@.^", text: "original modInBoth" },
+                right: { uri: "hg:modInBoth@.", text: "mod in parent" },
+            } as OpenEditor);
         });
 
-        test("shows renamed parent diff", async function () {
-            await openWith("hg.openChange", parentResource("renamed"));
-            assert.strictEqual(
-                vscode.window.activeTextEditor?.document.getText(),
-                "renamed in parent"
-            );
-            assert.deepStrictEqual(documents(), [
-                "file:renamed => renamed in parent",
-                "hg:toBeRenamed@.^ => content of toBeRenamed",
-            ]);
+        test("shows ren parent diff", async function () {
+            await openOnly(env.parentResource("ren"));
+            assert.deepStrictEqual(openEditor(), {
+                left: { uri: "hg:toBeRen@.^", text: "original toBeRen" },
+                right: { uri: "file:ren", text: "ren in parent" },
+            } as OpenEditor);
 
-            await vscode.commands.executeCommand("openEditors.closeAll");
-
-            await openWith("hg.openParentChange", parentResource("renamed"));
-            assert.strictEqual(
-                vscode.window.activeTextEditor?.document.getText(),
-                "renamed in parent"
-            );
-            assert.deepStrictEqual(documents(), [
-                "hg:renamed@. => renamed in parent",
-                "hg:toBeRenamed@.^ => content of toBeRenamed",
-            ]);
+            await openOnly(env.parentResource("ren"), "hg.openParentChange");
+            assert.deepStrictEqual(openEditor(), {
+                left: { uri: "hg:toBeRen@.^", text: "original toBeRen" },
+                right: { uri: "hg:ren@.", text: "ren in parent" },
+            } as OpenEditor);
         });
 
-        test("shows renamed parent and wdir diff", async function () {
-            // We currently don't handle parent + wdir renames correctly.
+        test("shows ren parent and wdir diff", async function () {
+            // We currently don't handle parent + wdir rens correctly.
             // The diff from parent to wdir fails to open. So we don't test it here.
 
-            await openWith(
-                "hg.openParentChange",
-                parentResource("renamedInParent")
+            await openOnly(
+                env.parentResource("renInParent"),
+                "hg.openParentChange"
             );
-            assert.strictEqual(
-                vscode.window.activeTextEditor?.document.getText(),
-                "renamed in parent"
-            );
-            assert.deepStrictEqual(documents(), [
-                "hg:renamedInParent@. => renamed in parent",
-                "hg:toBeRenamedInBoth@.^ => content of toBeRenamedInBoth",
-            ]);
+            assert.deepStrictEqual(openEditor(), {
+                left: {
+                    uri: "hg:toBeRenInBoth@.^",
+                    text: "original toBeRenInBoth",
+                },
+                right: { uri: "hg:renInParent@.", text: "ren in parent" },
+            } as OpenEditor);
         });
 
-        test("shows removed parent diff", async function () {
-            await openWith("hg.openChange", parentResource("removed"));
-            assert.strictEqual(
-                vscode.window.activeTextEditor?.document.getText(),
-                "content of removed"
-            );
-            assert.deepStrictEqual(documents(), [
-                "hg:removed@.^ => content of removed",
-            ]);
+        test("shows del parent diff", async function () {
+            await openOnly(env.parentResource("del"));
+            assert.deepStrictEqual(openEditor(), {
+                only: { uri: "hg:del@.^", text: "original del" },
+            } as OpenEditor);
 
-            await vscode.commands.executeCommand("openEditors.closeAll");
-
-            await openWith("hg.openParentChange", parentResource("removed"));
-            assert.strictEqual(
-                vscode.window.activeTextEditor?.document.getText(),
-                "content of removed"
-            );
-            assert.deepStrictEqual(documents(), [
-                "hg:removed@.^ => content of removed",
-            ]);
+            await openOnly(env.parentResource("del"), "hg.openParentChange");
+            assert.deepStrictEqual(openEditor(), {
+                only: { uri: "hg:del@.^", text: "original del" },
+            } as OpenEditor);
         });
     });
 });
